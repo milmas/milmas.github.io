@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kracht & Hardlopen Log</title>
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root { --bg:#0f1115; --panel:#161a22; --accent:#7bd389; --text:#e7e9ee; --muted:#a9afbd; --line:#242a36; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial; background: var(--bg); color: var(--text); }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: rgba(15,17,21,.9); backdrop-filter: blur(6px); z-index: 10; display:flex; align-items:center; gap:12px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0 12px 0 0; white-space: nowrap; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  main { padding: 18px; display: grid; grid-template-columns: 1fr; gap: 18px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .row { display:flex; gap: 10px; flex-wrap: wrap; }
+  label { font-size: 13px; color: var(--muted); }
+  input, select, textarea, button { background: #0f131a; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+  input[type="number"] { width: 110px; }
+  input[type="date"] { width: 160px; }
+  select { min-width: 160px; }
+  textarea { width: 100%; min-height: 72px; resize: vertical; }
+  button { cursor: pointer; border-color: #2b3242; transition: transform .02s ease, background .2s ease, border-color .2s; }
+  button.primary { background: var(--accent); color: #0e1014; border-color: #3d9b57; font-weight: 650; }
+  button.ghost { background: transparent; }
+  button:active { transform: translateY(1px); }
+  .muted { color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); }
+  .set-row { display:grid; grid-template-columns: 60px 1fr 1fr 1fr; gap: 8px; align-items: center; }
+  .set-row span.idx { text-align:center; color: var(--muted); }
+  .table { width:100%; border-collapse: collapse; font-size: 14px; }
+  .table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+  .table th { color: var(--muted); font-weight: 600; }
+  .space { height: 8px; }
+  .danger { color: #ff7a7a; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  details > summary { cursor: pointer; user-select: none; }
+  .sticky-actions { display:flex; gap:8px; flex-wrap: wrap; margin-left:auto; }
+  .inline { display:inline-flex; gap:8px; align-items:center; }
+  .exercise-chip { display:inline-flex; padding: 4px 8px; border-radius: 999px; background:#10141c; border:1px solid var(--line); margin: 0 6px 6px 0; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kracht & Hardlopen Log</h1>
+  <div class="meta" id="weekMeta"></div>
+  <div class="sticky-actions">
+    <button id="exportBtn" class="ghost">Exporteren</button>
+    <label class="pill" for="importFile">Importeren
+      <input id="importFile" type="file" accept=".json" style="display:none">
+    </label>
+    <button id="resetBtn" class="ghost danger">Gegevens resetten</button>
+  </div>
+</header>
+<main>
+  <section class="card">
+    <div class="row">
+      <div>
+        <label for="date">Datum</label><br>
+        <input type="date" id="date">
+      </div>
+      <div>
+        <label for="program">Schema / Dag</label><br>
+        <input type="text" id="program" placeholder="bijv. PPL - Push">
+      </div>
+      <div>
+        <label for="notes">Opmerkingen</label><br>
+        <input type="text" id="notes" placeholder="energie, slaap, spierpijn...">
+      </div>
+      <div class="pill">ISO-week: <span id="isoWeek" class="mono"></span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="align-items: end;">
+      <div style="flex:1;">
+        <label for="exerciseSearch">Oefening toevoegen</label><br>
+        <input list="exerciseList" id="exerciseSearch" placeholder="Zoek oefening... (of typ en druk Enter)">
+        <datalist id="exerciseList"></datalist>
+      </div>
+      <div>
+        <button id="addExerciseBtn" class="primary">Toevoegen</button>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:6px;">Tip: kies uit de lijst of typ een nieuwe naam en druk op <span class="mono">Enter</span>.</div>
+    <div class="space"></div>
+    <div id="workoutContainer"></div>
+  </section>
+
+  <section class="card">
+    <h3 style="margin-top:0;">Hardlopen (optioneel)</h3>
+    <div class="row">
+      <div><label>Afstand (km)</label><br><input type="number" step="0.01" id="runDistance"></div>
+      <div><label>Duur (min)</label><br><input type="number" step="0.1" id="runDuration"></div>
+      <div><label>Tempo (min/km)</label><br><input type="text" id="runPace" placeholder="automatisch"></div>
+      <div><label>Notities</label><br><input type="text" id="runNotes" placeholder="route, weer, schoenen..."></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="align-items:center;">
+      <h3 style="margin:0;">Samenvatting van vandaag</h3>
+      <span class="pill">Slaat automatisch lokaal op</span>
+      <div class="sticky-actions">
+        <button id="saveWorkoutBtn" class="primary">Dag opslaan</button>
+      </div>
+    </div>
+    <div id="summary"></div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="align-items:center;">
+      <h3 style="margin:0;">Geschiedenis</h3>
+      <div class="inline">
+        <label>Oefening</label>
+        <input list="exerciseList" id="historyExercise" placeholder="Kies een oefening">
+      </div>
+      <button id="viewHistoryBtn">Bekijken</button>
+    </div>
+    <div id="history"></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary><strong>Catalogus</strong> (klik om te bekijken/bewerken)</summary>
+      <div id="catalog"></div>
+    </details>
+  </section>
+</main>
+
+<script>
+/** ---------- Hulpfuncties ---------- */
+const $ = sel => document.querySelector(sel);
+const el = (tag, attrs={}, ...children) => {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
+  return e;
+};
+function toISODate(d) { const pad = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function fromISODate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1)/7);
+  return { week: weekNo, year: d.getUTCFullYear() };
+}
+function nicePace(durationMin, distanceKm) {
+  if (!durationMin || !distanceKm) return '';
+  const pace = durationMin / distanceKm;
+  const m = Math.floor(pace);
+  const s = Math.round((pace - m) * 60);
+  return `${m}:${String(s).padStart(2,'0')} /km`;
+}
+
+/** ---------- Data ---------- */
+const KEY = 'fitnessData_v1_nl';
+const DEFAULT = { workouts: {}, catalog: [] };
+const COMMON_EXERCISES = [
+  "Bankdrukken (barbell)","Bankdrukken (dumbbell)","Incline bench (barbell)","Incline bench (dumbbell)","Decline bench",
+  "Overhead press","Schouderdruk (zittend, dumbbell)","Arnold press","Push-up","Push-up met gewicht","Dips","Dips met gewicht",
+  "Cable chest fly","Pec deck fly","Incline cable fly","Lateral raise","Cable lateral raise","Schouderdruk machine",
+  "Close-grip bench","Triceps pushdown","Overhead triceps extension","Skull crushers","Diamond push-up","Chest press machine",
+  "Smith machine bench","Pull-up","Chin-up","Lat pulldown","Wide-grip pulldown","Single-arm pulldown","Barbell row",
+  "Pendlay row","Dumbbell row","Chest-supported row","T-bar row","Seated cable row","Face pull","Rear delt fly","Reverse pec deck",
+  "Hammer curl","Barbell curl","Dumbbell curl","Incline dumbbell curl","Preacher curl","EZ-bar curl","Cable curl","Concentration curl",
+  "Drag curl","Shrugs","Trap bar shrug","Back squat","Front squat","Goblet squat","Hack squat","Smith squat","Leg press",
+  "Roemeense deadlift","Conventionele deadlift","Sumo deadlift","Deficit deadlift","Block pull","Hip thrust","Glute bridge",
+  "Bulgarian split squat","Walking lunge","Reverse lunge","Step-up","Leg extension","Leg curl","Seated leg curl","Lying leg curl",
+  "Nordic curl","Kuiten (staand)","Kuiten (zittend)","Plank","Side plank","Cable crunch","Hanging leg raise",
+  "Captain's chair raise","Dragon flag","Weighted sit-up","Russian twist","Power clean","Hang power clean","Clean & jerk",
+  "Snatch","High pull","Kettlebell swing","Kettlebell goblet squat","Kettlebell clean","Kettlebell snatch","Turkish get-up",
+  "Assisted pull-up","Pullover machine","Hip abduction","Hip adduction","Adductor machine","Abductor machine","Smith OHP",
+  "Chest supported T-bar row","Machine row","Hammer Strength row","Hammer Strength press"
+];
+let state = load();
+function load() {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return {...DEFAULT, catalog: [...COMMON_EXERCISES].sort()};
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.catalog) || data.catalog.length === 0) data.catalog = [...COMMON_EXERCISES].sort();
+    return data;
+  } catch(e) {
+    console.error('Load error', e);
+    return {...DEFAULT, catalog: [...COMMON_EXERCISES].sort()};
+  }
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); renderSummary(); }
+
+/** ---------- Catalogus ---------- */
+function renderCatalog() {
+  const container = $('#catalog'); container.innerHTML = '';
+  const chips = el('div'); state.catalog.forEach(name => chips.appendChild(el('span', {class:'exercise-chip'}, name)));
+  container.appendChild(chips);
+  const form = el('div', {class:'row', style:'margin-top:12px; align-items:end;'},
+    el('div', {}, el('label', {}, 'Toevoegen aan catalogus'), el('input', {id:'newCatalogExercise', placeholder:'Naam van oefening'})),
+    el('div', {}, el('button', {id:'addCatalogBtn'}, 'Toevoegen'))
+  );
+  container.appendChild(form);
+  $('#addCatalogBtn').onclick = () => {
+    const name = ($('#newCatalogExercise').value || '').trim();
+    if (!name) return;
+    if (!state.catalog.includes(name)) { state.catalog.push(name); state.catalog.sort(); save(); buildExerciseDatalist(); renderCatalog(); $('#newCatalogExercise').value = ''; }
+  };
+}
+function buildExerciseDatalist() {
+  const dl = $('#exerciseList'); dl.innerHTML=''; state.catalog.forEach(name => dl.appendChild(el('option', {value:name})));
+}
+
+/** ---------- Workout UI ---------- */
+function addExerciseToWorkout(name) {
+  if (!name) return;
+  const container = $('#workoutContainer');
+  const card = el('div', {class:'card', style:'background:#111521; border-color:#22293a; margin-bottom:12px;'});
+  const header = el('div', {class:'row', style:'align-items:center; justify-content: space-between;'});
+  const title = el('h3', {style:'margin:0;'}, name);
+  const controls = el('div', {class:'inline'});
+
+  const repRange = el('input', {type:'text', placeholder:'Herhalingen bereik (bijv. 6-8)', value:'', style:'width:170px;', title:'Doel herhalingen'});
+  const setCount = el('select'); for (let i=1;i<=6;i++) setCount.appendChild(el('option', {value:String(i)}, String(i)+' sets')); setCount.value='3';
+  const removeBtn = el('button', {class:'ghost danger'}, 'Verwijderen');
+  controls.append('Sets:', setCount, repRange, removeBtn);
+
+  header.append(title, controls); card.appendChild(header);
+
+  const lastMeta = el('div', {class:'muted', style:'margin:4px 0 10px; font-size:13px;'});
+  card.appendChild(lastMeta);
+
+  const setsWrap = el('div', {class:'sets'}); card.appendChild(setsWrap);
+
+  const notes = el('textarea', {placeholder:'Notities bij deze oefening (tempo, RPE, etc.)'}); card.appendChild(notes);
+
+  removeBtn.onclick = () => card.remove();
+
+  function renderSetRows() {
+    setsWrap.innerHTML = '';
+    for (let i=1;i<=Number(setCount.value);i++) {
+      const row = el('div', {class:'set-row'});
+      row.appendChild(el('span', {class:'idx'}, String(i)));
+      const reps = el('input', {type:'number', placeholder:'Herh.', min:'0', step:'1'});
+      const weight = el('input', {type:'number', placeholder:'Gewicht', min:'0', step:'0.5'});
+      const rpe = el('input', {type:'number', placeholder:'RPE', min:'0', max:'10', step:'0.5'});
+      row.append(reps, weight, rpe);
+      setsWrap.appendChild(row);
+    }
+  }
+  setCount.onchange = renderSetRows; renderSetRows();
+
+  function updateLastMeta() {
+    const {week, year} = getISOWeek(fromISODate($('#date').value || toISODate(new Date())));
+    const currentWeekKey = `${year}-W${String(week).padStart(2,'0')}`;
+    const {latestInWeek, latestPrevWeek} = findLatestForExerciseInWeeks(name, currentWeekKey);
+    const parts = [];
+    if (latestInWeek) parts.push(`Deze week: <span class="mono">${latestInWeek.summary}</span>`);
+    if (latestPrevWeek) parts.push(`Vorige week: <span class="mono">${latestPrevWeek.summary}</span>`);
+    lastMeta.innerHTML = parts.length ? parts.join(' · ') : 'Nog geen geschiedenis voor deze oefening.';
+  }
+  updateLastMeta();
+
+  container.appendChild(card);
+}
+
+function findLatestForExerciseInWeeks(name, weekKey) {
+  const workouts = state.workouts || {};
+  let latestInWeek = null, latestPrevWeek = null;
+  const [yearStr, wkStr] = weekKey.split('-W'); const year = Number(yearStr); const wk = Number(wkStr);
+  const prev = weekKeyOfYearWeek(year, wk-1) || weekKeyOfYearWeek(year-1, 52);
+  for (const [date, w] of Object.entries(workouts)) {
+    (w.exercises || []).forEach(ex => {
+      if (ex.name !== name) return;
+      const {week, year} = getISOWeek(fromISODate(date));
+      const k = `${year}-W${String(week).padStart(2,'0')}`;
+      const summary = summarizeSets(ex.sets);
+      const item = {date, summary};
+      if (k === weekKey) { if (!latestInWeek || date > latestInWeek.date) latestInWeek = item; }
+      else if (k === prev) { if (!latestPrevWeek || date > latestPrevWeek.date) latestPrevWeek = item; }
+    });
+  }
+  return {latestInWeek, latestPrevWeek};
+}
+function weekKeyOfYearWeek(year, week) { if (week >= 1 && week <= 53) return `${year}-W${String(week).padStart(2,'0')}`; return null; }
+function summarizeSets(sets) {
+  if (!sets || !sets.length) return '-';
+  const weights = sets.map(s => s.weight).filter(v => v!==null && v!==undefined);
+  const reps = sets.map(s => s.reps).filter(v => v!==null && v!==undefined);
+  const commonWeight = (weights.length && weights.every(w => w === weights[0])) ? weights[0] : null;
+  if (commonWeight !== null) { return `${reps.join('/')} x ${commonWeight}`; }
+  else { return sets.map(s => `${s.reps||''}x${s.weight||''}`).join(', '); }
+}
+
+/** ---------- Verzamelen & Samenvatting ---------- */
+function collectWorkoutFromUI() {
+  const date = $('#date').value || toISODate(new Date());
+  const program = $('#program').value.trim();
+  const notes = $('#notes').value.trim();
+  const exCards = Array.from($('#workoutContainer').children);
+  const exercises = exCards.map(card => {
+    const name = card.querySelector('h3').textContent;
+    const repRange = card.querySelector('input[placeholder^="Herhalingen"]').value.trim();
+    const notes = card.querySelector('textarea').value.trim();
+    const setRows = Array.from(card.querySelectorAll('.set-row'));
+    const sets = setRows.map(row => {
+      const [reps, weight, rpe] = row.querySelectorAll('input');
+      return { reps: reps.value ? Number(reps.value) : null, weight: weight.value ? Number(weight.value) : null, rpe: rpe.value ? Number(rpe.value) : null };
+    });
+    return { name, repRange, sets, notes };
+  });
+  const runDistance = Number($('#runDistance').value || 0);
+  const runDuration = Number($('#runDuration').value || 0);
+  const pace = $('#runPace').value || nicePace(runDuration, runDistance);
+  const runNotes = $('#runNotes').value.trim();
+  const run = (runDistance || runDuration || runNotes) ? { distanceKm: runDistance||null, durationMin: runDuration||null, pace: pace||null, notes: runNotes||'' } : null;
+  return { date, program, notes, exercises, run };
+}
+function renderSummary() {
+  const { date } = collectWorkoutFromUI();
+  const s = $('#summary');
+  const {week, year} = getISOWeek(fromISODate(date));
+  const wkKey = `${year}-W${String(week).padStart(2,'0')}`;
+  const preview = collectWorkoutFromUI();
+  const exList = preview.exercises.map(ex => {
+    const setsText = summarizeSets(ex.sets);
+    return `<tr><td>${ex.name}</td><td>${ex.repRange||'-'}</td><td class="mono">${setsText}</td><td>${ex.notes||''}</td></tr>`;
+  }).join('');
+  s.innerHTML = `
+    <div class="muted">Datum: <span class="mono">${date}</span> · Week <span class="mono">${wkKey}</span></div>
+    <div class="space"></div>
+    <table class="table">
+      <thead><tr><th>Oefening</th><th>Doel herhalingen</th><th>Sets</th><th>Notities</th></tr></thead>
+      <tbody>${exList || '<tr><td colspan="4" class="muted">Nog geen oefeningen toegevoegd.</td></tr>'}</tbody>
+    </table>
+    <div class="space"></div>
+    ${preview.run ? `<div>Hardlopen: <span class="mono">${(preview.run.distanceKm||'-')} km</span> in <span class="mono">${(preview.run.durationMin||'-')} min</span> (${preview.run.pace||'-'}) — ${preview.run.notes||''}</div>` : '<div class="muted">Geen hardlooptraining gelogd.</div>'}
+  `;
+}
+
+/** ---------- Opslaan / Geschiedenis ---------- */
+function saveWorkout() {
+  const w = collectWorkoutFromUI();
+  state.workouts[w.date] = w;
+  w.exercises.forEach(ex => { if (ex.name && !state.catalog.includes(ex.name)) state.catalog.push(ex.name); });
+  state.catalog.sort();
+  save(); buildExerciseDatalist();
+  alert('Opgeslagen!');
+}
+function viewHistoryForExercise(name) {
+  const hist = $('#history');
+  if (!name) { hist.innerHTML = '<span class="muted">Kies een oefening om de geschiedenis te tonen.</span>'; return; }
+  const rows = [];
+  const entries = Object.values(state.workouts).filter(w => (w.exercises||[]).some(ex => ex.name === name)).sort((a,b) => a.date.localeCompare(b.date));
+  for (const w of entries) {
+    const ex = w.exercises.find(e => e.name === name);
+    const {week, year} = getISOWeek(fromISODate(w.date));
+    rows.push(`<tr><td class="mono">${w.date}</td><td>${year}-W${String(week).padStart(2,'0')}</td><td class="mono">${summarizeSets(ex.sets)}</td><td>${ex.repRange||''}</td><td>${ex.notes||''}</td></tr>`);
+  }
+  hist.innerHTML = entries.length ? `
+    <table class="table">
+      <thead><tr><th>Datum</th><th>Week</th><th>Sets</th><th>Doel herhalingen</th><th>Notities</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>` : '<span class="muted">Nog geen geschiedenis.</span>';
+}
+
+/** ---------- Import/Export/Reset ---------- */
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'fitness_data_nl.json'; a.click(); URL.revokeObjectURL(url);
+}
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data || typeof data !== 'object') throw new Error('Onjuist bestand');
+      state = { ...DEFAULT, ...data };
+      if (!Array.isArray(state.catalog) || state.catalog.length === 0) state.catalog = [...COMMON_EXERCISES].sort();
+      save(); buildExerciseDatalist(); renderCatalog(); $('#workoutContainer').innerHTML=''; renderSummary();
+      alert('Import gelukt!');
+    } catch(err) { alert('Import mislukt: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+function resetAll() {
+  if (!confirm('Dit verwijdert alle trainingen en je catalogus. Doorgaan?')) return;
+  state = {...DEFAULT, catalog: [...COMMON_EXERCISES].sort()};
+  save(); buildExerciseDatalist(); renderCatalog(); $('#workoutContainer').innerHTML=''; renderSummary();
+}
+
+/** ---------- Datum/Week/Tempo ---------- */
+function setDateToday() { const today = new Date(); $('#date').value = toISODate(today); updateWeekMeta(); }
+function updateWeekMeta() {
+  const date = fromISODate($('#date').value || toISODate(new Date()));
+  const {week, year} = getISOWeek(date);
+  $('#isoWeek').textContent = `${year}-W${String(week).padStart(2,'0')}`;
+  $('#weekMeta').textContent = `Week ${week}, ${year}`;
+  computeRunPace(); renderSummary();
+}
+function computeRunPace() { const d = Number($('#runDistance').value || 0); const m = Number($('#runDuration').value || 0); $('#runPace').value = nicePace(m, d); }
+
+/** ---------- SW registratie ---------- */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(console.error);
+  });
+}
+
+/** ---------- Events ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  setDateToday(); buildExerciseDatalist(); renderCatalog(); renderSummary();
+  $('#date').addEventListener('change', updateWeekMeta);
+  $('#runDistance').addEventListener('input', computeRunPace);
+  $('#runDuration').addEventListener('input', computeRunPace);
+
+  function addExerciseFromInput() {
+    const name = ($('#exerciseSearch').value || '').trim();
+    if (!name) return;
+    addExerciseToWorkout(name);
+    if (!state.catalog.includes(name)) { state.catalog.push(name); state.catalog.sort(); save(); buildExerciseDatalist(); renderCatalog(); }
+    $('#exerciseSearch').value = '';
+    $('#exerciseSearch').focus();
+  }
+  $('#addExerciseBtn').onclick = addExerciseFromInput;
+  $('#exerciseSearch').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addExerciseFromInput(); } });
+
+  $('#saveWorkoutBtn').onclick = saveWorkout;
+  $('#viewHistoryBtn').onclick = () => viewHistoryForExercise($('#historyExercise').value.trim());
+  $('#exportBtn').onclick = exportData;
+  $('#importFile').addEventListener('change', e => { const file = e.target.files[0]; if (file) importData(file); });
+  $('#resetBtn').onclick = resetAll;
+});
+</script>
+</body>
+</html>
