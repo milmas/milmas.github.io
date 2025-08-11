@@ -1,0 +1,22 @@
+*{box-sizing:border-box}html,body{margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,'Noto Sans',sans-serif;background:#f6f7fb;color:#0f172a}
+.topbar{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+.brand{font-weight:700}
+.badge{font-size:12px;padding:4px 8px;border:1px solid #e5e7eb;border-radius:999px;background:#f9fafb}
+.container{max-width:1000px;margin:16px auto;padding:0 12px;display:grid;gap:16px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.grid{display:grid;gap:10px}
+.grid.two{grid-template-columns:1fr 1fr}
+.row{display:flex;align-items:center}
+.gap{gap:8px}
+.btn{border:1px solid #cbd5e1;background:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+.btn.primary{background:#0ea5e9;color:#fff;border-color:#0ea5e9}
+.btn.danger{background:#ef4444;color:#fff;border-color:#ef4444}
+label{font-size:14px;color:#334155;display:flex;flex-direction:column;gap:6px}
+input,select{padding:8px;border:1px solid #cbd5e1;border-radius:10px}
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+.table th,.table td{border-bottom:1px solid #e5e7eb;padding:8px;text-align:left}
+.kg{font-weight:700}
+.footer{padding:16px;text-align:center;color:#64748b}
+.pill{font-size:12px;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;background:#f8fafc}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:720px){.grid.two,.cards{grid-template-columns:1fr}}
