@@ -1,8 +1,8 @@
 
-/** Minimal client-side app for GitHub Pages.
- * - Loads data/BlokPeriodisering.xlsx via fetch + SheetJS
- * - Simple plan generator based on 1RM, exercise percentages, and phase intensity
- * - LocalStorage persistence for 1RM and history
+/** LCHM Fitness (Pages) — editable plan
+ * - Excel parsed in-browser (SheetJS)
+ * - Manual overrides for sets/reps/weights
+ * - LocalStorage persistence for 1RM, history, and edited plan
  */
 
 const BASES = ["Squat","Bench-Press","Deadlift","Military-Press","Pull-Up","Clean","Snatch","Bicep Curl"];
@@ -28,26 +28,20 @@ const els = {
   clearLog: document.getElementById("clear-log"),
 };
 
-const LS_1RM = "lchm_pages_onerm";
+const LS_1RM  = "lchm_pages_onerm";
 const LS_HIST = "lchm_pages_history";
+const LS_PLAN = "lchm_pages_plan";
 
-function get1RM() {
-  try { return JSON.parse(localStorage.getItem(LS_1RM)) || {}; } catch { return {}; }
-}
-function set1RM(obj) {
-  localStorage.setItem(LS_1RM, JSON.stringify(obj));
-}
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem(LS_HIST)) || {}; } catch { return {}; }
-}
-function setHistory(obj) {
-  localStorage.setItem(LS_HIST, JSON.stringify(obj));
-}
+function get1RM() { try { return JSON.parse(localStorage.getItem(LS_1RM)) || {}; } catch { return {}; } }
+function set1RM(obj) { localStorage.setItem(LS_1RM, JSON.stringify(obj)); }
+function getHistory() { try { return JSON.parse(localStorage.getItem(LS_HIST)) || {}; } catch { return {}; } }
+function setHistory(obj) { localStorage.setItem(LS_HIST, JSON.stringify(obj)); }
+function getPlan() { try { return JSON.parse(localStorage.getItem(LS_PLAN)) || []; } catch { return []; } }
+function setPlan(p) { localStorage.setItem(LS_PLAN, JSON.stringify(p)); }
 
 function default1RM() {
   return { "Bench-Press":80,"Squat":100,"Deadlift":120,"Military-Press":50,"Pull-Up":25,"Clean":70,"Snatch":50,"Bicep Curl":25 };
 }
-
 function round2p5(x) { return Math.round(x/2.5)*2.5; }
 
 function csvDownloadLink(rows, headers) {
@@ -57,12 +51,11 @@ function csvDownloadLink(rows, headers) {
 }
 
 async function loadExcel() {
-  const resp = await fetch("data/BlokPeriodisering.xlsx");
+  const resp = await fetch("data/BlokPeriodisering.xlsx?v=editable1"); // cache-bust
   const arr = await resp.arrayBuffer();
   const wb = XLSX.read(arr, { type: "array" });
   const phasesSheet = XLSX.utils.sheet_to_json(wb.Sheets["Fases"], { header:1 }).flat().filter(Boolean);
   const exSheet = XLSX.utils.sheet_to_json(wb.Sheets["Exercises"], { header:1 });
-  // Headings: Exercise, Movement, Percentage, Percentage of
   const headers = exSheet[0];
   const idx = {
     name: headers.indexOf("Exercise"),
@@ -108,7 +101,6 @@ function renderExercises(list, q="", mov="Alle") {
   els.exercises.innerHTML = "";
   els.exercises.appendChild(by2);
 
-  // movement select
   const uniqueMov = ["Alle"].concat([...new Set(list.map(e => e.movement))].sort());
   els.movement.innerHTML = uniqueMov.map(m => `<option value="${m}">${m}</option>`).join("");
   els.movement.value = mov;
@@ -141,32 +133,99 @@ function generatePlan(exercises, phase, onerm, history) {
     base: ex.percentOf,
     sets: rule.sets,
     reps: rule.reps,
-    weight: computeWeight(ex, rule.intensity, onerm, history),
+    targetWeight: computeWeight(ex, rule.intensity, onerm, history),
+    setWeights: Array.from({length: rule.sets}, ()=>null), // manual per-set
   }));
 }
 
-function renderPlan(plan) {
+function renderPlanEditable(plan) {
   if (!plan.length) { els.plan.innerHTML = "<div class='pill'>Nog geen plan — kies fase en klik Genereer.</div>"; return; }
+
   const tbl = document.createElement("table");
   tbl.className = "table";
-  tbl.innerHTML = `<thead><tr><th>Oefening</th><th>Beweging</th><th>Basis</th><th>Sets×Reps</th><th>Gewicht</th></tr></thead>`;
+  tbl.innerHTML = `<thead><tr>
+    <th>Oefening</th><th>Beweging</th><th>Basis</th>
+    <th>Sets</th><th>Reps</th><th>Doel (kg)</th><th>Gewicht per set</th></tr></thead>`;
   const tb = document.createElement("tbody");
-  plan.forEach(p => {
+
+  plan.forEach((p, idx) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${p.name}</td><td>${p.movement}</td><td>${p.base}</td><td>${p.sets}×${p.reps}</td><td class="kg">${p.weight} kg</td>`;
+    tr.innerHTML = `
+      <td><strong>${p.name}</strong></td>
+      <td>${p.movement}</td>
+      <td>${p.base}</td>
+      <td><input type="number" min="1" step="1" value="${p.sets}" id="sets_${idx}" style="width:80px"/></td>
+      <td><input type="number" min="1" step="1" value="${p.reps}" id="reps_${idx}" style="width:80px"/></td>
+      <td><input type="number" step="0.5" value="${p.targetWeight}" id="tw_${idx}" style="width:100px"/></td>
+      <td id="sets_cell_${idx}"></td>`;
     tb.appendChild(tr);
+
+    // Build per-set inputs
+    const cell = tr.querySelector(`#sets_cell_${idx}`);
+    cell.style.minWidth = "220px";
+    cell.style.whiteSpace = "nowrap";
+    const arr = p.setWeights || [];
+    const n = Math.max(1, parseInt(p.sets, 10) || 1);
+    if (arr.length !== n) {
+      p.setWeights = Array.from({length: n}, (_,i)=>arr[i] ?? p.targetWeight);
+    }
+    p.setWeights.forEach((val, sidx) => {
+      const inp = document.createElement("input");
+      inp.type = "number"; inp.step = "0.5"; inp.value = val ?? "";
+      inp.style.width = "80px"; inp.style.marginRight = "6px";
+      inp.id = `sw_${idx}_${sidx}`;
+      cell.appendChild(inp);
+      setTimeout(() => {
+        inp.onchange = () => {
+          const v = parseFloat(inp.value);
+          p.setWeights[sidx] = isNaN(v) ? null : v;
+          setPlan(plan);
+        };
+      }, 0);
+    });
+
+    // Wire main inputs
+    setTimeout(() => {
+      const sEl = document.getElementById(`sets_${idx}`);
+      const rEl = document.getElementById(`reps_${idx}`);
+      const tEl = document.getElementById(`tw_${idx}`);
+      sEl.onchange = () => {
+        p.sets = Math.max(1, parseInt(sEl.value,10)||1);
+        // re-render whole plan to rebuild set inputs length
+        setPlan(plan);
+        renderPlanEditable(plan);
+      };
+      rEl.onchange = () => { p.reps = Math.max(1, parseInt(rEl.value,10)||1); setPlan(plan); };
+      tEl.onchange = () => { const v = parseFloat(tEl.value); p.targetWeight = isNaN(v)? p.targetWeight : v; setPlan(plan); };
+    }, 0);
   });
+
   tbl.appendChild(tb);
+
+  // Save & CSV row
+  const controls = document.createElement("div");
+  controls.className = "row gap";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn"; saveBtn.textContent = "Plan opslaan";
+  saveBtn.onclick = () => { setPlan(plan); alert("Plan opgeslagen"); };
+  controls.appendChild(saveBtn);
+
+  // CSV export uses per-set weights flattened
+  const rows = [];
+  plan.forEach(p => {
+    const sw = (p.setWeights || []).map((w,i)=>`S${i+1}:${w ?? ""}`).join("|");
+    rows.push({ name: p.name, movement: p.movement, base: p.base, sets: p.sets, reps: p.reps, target: p.targetWeight, per_set: sw });
+  });
+  const url = csvDownloadLink(rows, ["name","movement","base","sets","reps","target","per_set"]);
+  els.dlPlan.href = url;
+
   els.plan.innerHTML = "";
   els.plan.appendChild(tbl);
-
-  // CSV link
-  const url = csvDownloadLink(plan, ["name","movement","base","sets","reps","weight"]);
-  els.dlPlan.href = url;
+  els.plan.appendChild(controls);
 }
 
 function renderLog(plan, history) {
-  if (!plan.length) { els.logUI.innerHTML = "<div class='pill'>Genereer eerst een plan.</div>"; return; }
+  if (!plan.length) { els.logUI.innerHTML = "<div class='pill'>Genereer of laad eerst een plan.</div>"; return; }
   const wrap = document.createElement("div");
   wrap.className = "grid two";
   plan.forEach((p,idx) => {
@@ -174,15 +233,16 @@ function renderLog(plan, history) {
     card.className = "card";
     const wId = `w_${idx}`; const rId = `r_${idx}`;
     const last = (history[p.name] && history[p.name].length) ? history[p.name][history[p.name].length-1] : null;
+    const suggest = (p.setWeights && p.setWeights[0]) || p.targetWeight;
     card.innerHTML = `
       <div class="row" style="justify-content:space-between;align-items:end;gap:10px">
         <div>
           <div><strong>${p.name}</strong></div>
-          <div class="pill">${p.sets}×${p.reps} • target ~ <span class="kg">${p.weight} kg</span></div>
+          <div class="pill">${p.sets}×${p.reps} • doel ~ <span class="kg">${p.targetWeight} kg</span></div>
           ${last ? `<div class="pill">Laatste: ${last.weight} kg × ${last.reps} @ ${last.date}</div>` : ""}
         </div>
         <div class="row gap">
-          <input id="${wId}" type="number" step="2.5" placeholder="kg" value="${p.weight}" />
+          <input id="${wId}" type="number" step="0.5" placeholder="kg" value="${suggest}" />
           <input id="${rId}" type="number" step="1" placeholder="reps" value="${p.reps}" />
           <button class="btn" id="log_${idx}">Log</button>
         </div>
@@ -203,7 +263,6 @@ function renderLog(plan, history) {
   els.logUI.innerHTML = "";
   els.logUI.appendChild(wrap);
 
-  // CSV history
   const rows = [];
   Object.entries(history).forEach(([name, arr]) => arr.forEach(e => rows.push({exercise:name, ...e})));
   const url = csvDownloadLink(rows, ["exercise","weight","reps","date"]);
@@ -211,10 +270,8 @@ function renderLog(plan, history) {
 }
 
 (async function init(){
-  // Load Excel
   const { phases, exercises } = await loadExcel();
 
-  // Populate phases
   phases.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p; opt.textContent = p;
@@ -222,7 +279,6 @@ function renderLog(plan, history) {
   });
   els.phase.value = phases[0];
 
-  // 1RM UI
   const onerm = Object.assign(default1RM(), get1RM());
   render1RM(onerm);
   els.save1rm.onclick = () => {
@@ -234,16 +290,24 @@ function renderLog(plan, history) {
     alert("1RM opgeslagen");
   };
 
-  // Exercises UI
   renderExercises(exercises);
   els.search.oninput = () => renderExercises(exercises, els.search.value, els.movement.value);
   els.movement.onchange = () => renderExercises(exercises, els.search.value, els.movement.value);
 
-  // Plan + Log
-  let plan = [];
+  let plan = getPlan();
+
+  if (!plan.length) {
+    // empty → wait for generate
+    els.plan.innerHTML = "<div class='pill'>Nog geen plan — kies fase en klik Genereer.</div>";
+  } else {
+    renderPlanEditable(plan);
+    renderLog(plan, getHistory());
+  }
+
   els.gen.onclick = () => {
     plan = generatePlan(exercises, els.phase.value, Object.assign(default1RM(), get1RM()), getHistory());
-    renderPlan(plan);
+    setPlan(plan);
+    renderPlanEditable(plan);
     renderLog(plan, getHistory());
   };
 
